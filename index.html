@@ -123,72 +123,103 @@ input{border:2px solid var(--bd);border-radius:3px}input:focus{outline:0;border-
 <footer class="ft"><svg class="tear t" viewBox="0 0 1200 60" preserveAspectRatio="none" aria-hidden="true"><rect y="30" width="1200" height="60" filter="url(#rf)"/></svg><b>BIER<i>PONG</i> CUP</b><svg viewBox="0 0 200 40" width="170" height="34" aria-hidden="true"><use href="#cr" x="0" y="0" width="28" height="33"/><use href="#cb" x="36" y="0" width="28" height="33"/><use href="#bl" x="76" y="8" width="22" height="22"/><use href="#cr" x="108" y="0" width="28" height="33"/><use href="#cb" x="144" y="0" width="28" height="33"/></svg><div style="margin-top:8px">Bitte trinkt verantwortungsvoll – Spaß geht vor Promille.</div></footer>
 <div id="toast"></div>
 <script>
-let S={teams:[],bracket:null,hist:[],nid:0};
-try{const x=localStorage.getItem("bp2");if(x)S=JSON.parse(x)}catch(e){}
-let fsv=false,ed=null,D={name:"",m:["","","",""]},dlg=null,tt;const C=10;
+/* === EINSTELLUNGEN: hier nach der Firebase-Einrichtung eintragen (leer = Demo-Modus nur auf diesem Gerät) === */
+const FB={dbUrl:"https://tunierdatenbankteams-default-rtdb.europe-west1.firebasedatabase.app/",apiKey:"AIzaSyA7LIXQ8VPJYnhMn-Z-MzF8sHql3iUU_ik",admin:"orga@mail.com"};
+const LOCAL=!FB.dbUrl,C=10,LS="bp3";
+let DB={phase:"reg",teams:{},matches:[]},last="",pend=false,off=false,A=null,H=[],D={name:"",m:["","","",""],err:""},dlg=null,ed=null,lo=null,fsv=false,tt;
+try{A=JSON.parse(localStorage.getItem("bpA"))}catch(e){}
+const saveA=()=>{try{A?localStorage.setItem("bpA",JSON.stringify(A)):localStorage.removeItem("bpA")}catch(e){}};
 const esc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const tn=id=>(S.teams.find(x=>x.id===id)||{}).name||"?";
-function toast(t){const e=document.getElementById("toast");e.textContent=t;e.style.display="block";clearTimeout(tt);tt=setTimeout(()=>e.style.display="none",2600)}
-function snap(){S.hist.push(JSON.stringify({teams:S.teams,bracket:S.bracket}));if(S.hist.length>100)S.hist.shift()}
-function undo(){const h=S.hist.pop();if(!h)return;const o=JSON.parse(h);S.teams=o.teams;S.bracket=o.bracket;dlg=null;render();toast("Letzte Aktion rückgängig gemacht")}
-function draw(){const ids=S.teams.map(t=>t.id);for(let i=ids.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[ids[i],ids[j]]=[ids[j],ids[i]]}
- if(ids.length%2)ids.push(0);const n=ids.length,rounds=[];
- for(let r=0;r<n-1;r++){const m=[];let by=null;for(let i=0;i<n/2;i++){const a=ids[i],b=ids[n-1-i];if(!a||!b)by=a||b;else m.push({a,b,sa:null,sb:null})}rounds.push({m,by});ids.splice(1,0,ids.pop())}
- snap();S.bracket={rounds};render()}
-function addTeam(){const name=D.name.trim(),mem=D.m.map(x=>x.trim()).filter(Boolean);
- if(!name){D.err="Bitte einen Teamnamen eingeben.";return render()}
- if(S.teams.some(t=>t.name.toLowerCase()===name.toLowerCase())){D.err="Diesen Teamnamen gibt es schon.";return render()}
- if(!mem.length){D.err="Bitte mindestens ein Teammitglied eintragen.";return render()}
- snap();S.nid++;S.teams.push({id:S.nid,name,members:mem});D={name:"",m:["","","",""],err:""};render()}
-function delTeam(id){snap();S.teams=S.teams.filter(t=>t.id!==id);render()}
-function clearAll(){snap();S.teams=[];S.bracket=null;render()}
-function toReg(){snap();S.bracket=null;render()}
-function openM(r,i){const m=S.bracket.rounds[r].m[i];dlg={r,i,a:m.sa,b:m.sb,err:""};render()}
+const kn=n=>encodeURIComponent(n.trim().replace(/\s+/g," ").toLowerCase()).replace(/\./g,"%2E");
+const tn=k=>(DB.teams[k]||{}).name||"?",adm=()=>!!A;
+const busy=()=>dlg||ed||lo||/^(INPUT|TEXTAREA)$/.test((document.activeElement||{}).tagName||"");
+function toast(t){const e=document.getElementById("toast");e.textContent=t;e.style.display="block";clearTimeout(tt);tt=setTimeout(()=>e.style.display="none",2800)}
+function setP(o,p,v){for(let i=0;i<p.length-1;i++)o=o[p[i]]=o[p[i]]||{};if(v===null)delete o[p[p.length-1]];else o[p[p.length-1]]=v}
+async function load(){if(LOCAL){try{return JSON.parse(localStorage.getItem(LS))||{}}catch(e){return{}}}const r=await fetch(FB.dbUrl+"/.json");if(!r.ok)throw new Error("net");return await r.json()||{}}
+async function token(){if(LOCAL||!A)return null;if(Date.now()>A.exp-60000){const r=await fetch("https://securetoken.googleapis.com/v1/token?key="+FB.apiKey,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:"grant_type=refresh_token&refresh_token="+encodeURIComponent(A.ref)});const j=await r.json();if(!r.ok){A=null;saveA();return null}A={id:j.id_token,ref:j.refresh_token,exp:Date.now()+j.expires_in*1000};saveA()}return A.id}
+async function patch(u){if(LOCAL){const d=await load();for(const k in u)setP(d,k.split("/"),u[k]);localStorage.setItem(LS,JSON.stringify(d));return}
+ const t=await token(),r=await fetch(FB.dbUrl+"/.json"+(t?"?auth="+t:""),{method:"PATCH",body:JSON.stringify(u)});if(!r.ok)throw new Error("w"+r.status)}
+async function login(pw){if(LOCAL){A={id:"x",ref:"",exp:9e15};saveA();return}
+ const r=await fetch("https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key="+FB.apiKey,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:FB.admin,password:pw,returnSecureToken:true})}),j=await r.json();
+ if(!r.ok)throw new Error("Falsches Passwort.");A={id:j.idToken,ref:j.refreshToken,exp:Date.now()+j.expiresIn*1000};saveA()}
+function norm(d){const t={};Object.entries(d.teams||{}).forEach(([k,v])=>t[k]={name:v.name,members:Object.values(v.members||{})});
+ const M=d.matches||{},m=Object.keys(M).filter(i=>M[i]).sort((a,b)=>a-b).map(i=>({i:+i,a:M[i].a,b:M[i].b,r:M[i].r,sa:M[i].sa==null?null:M[i].sa,sb:M[i].sb==null?null:M[i].sb}));
+ return{phase:(d.state||{}).phase||"reg",teams:t,matches:m}}
+async function sync(){const d=norm(await load());last=JSON.stringify(d);DB=d}
+async function poll(){try{const d=norm(await load()),s=JSON.stringify(d);const was=off;off=false;if(s!==last){last=s;DB=d;if(busy())pend=true;else render()}else if(was)render()}catch(e){if(!off){off=true;if(!busy())render()}}}
+document.addEventListener("focusout",()=>setTimeout(()=>{if(pend&&!busy())render()},250));
+async function W(u,ok){try{await patch(u);await sync();if(ok)toast(ok);render()}catch(e){toast("Speichern fehlgeschlagen – bitte erneut als Orga anmelden.");render()}}
+function snap(){H.push(JSON.stringify(DB));if(H.length>50)H.shift()}
+async function undo(){const h=H.pop();if(!h)return;const s=JSON.parse(h),T={},M={};Object.entries(s.teams).forEach(([k,v])=>T[k]=v);s.matches.forEach(m=>M[m.i]={a:m.a,b:m.b,r:m.r,sa:m.sa,sb:m.sb});
+ await W({"state/phase":s.phase,teams:Object.keys(T).length?T:null,matches:Object.keys(M).length?M:null},"Letzte Aktion rückgängig gemacht")}
+async function addTeam(){const name=D.name.trim().replace(/\s+/g," "),mem=D.m.map(x=>x.trim()).filter(Boolean),e=m=>{D.err=m;render()};
+ if(!name)return e("Bitte einen Teamnamen eingeben.");if(name.length>40)return e("Der Teamname darf höchstens 40 Zeichen haben.");
+ if(!mem.length)return e("Bitte mindestens ein Teammitglied eintragen.");
+ try{await sync()}catch(x){}
+ if(DB.phase!=="reg")return e("Die Anmeldung ist leider schon geschlossen.");
+ const k=kn(name);if(DB.teams[k])return e("Diesen Teamnamen gibt es schon – bitte einen anderen wählen.");
+ try{await patch({["teams/"+k]:{name,members:mem}});D={name:"",m:["","","",""],err:""};await sync();toast("Team angemeldet ✓");render()}catch(x){e("Das hat nicht geklappt – evtl. ist der Name vergeben oder die Anmeldung geschlossen.")}}
+async function draw(){const ids=Object.keys(DB.teams);for(let i=ids.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[ids[i],ids[j]]=[ids[j],ids[i]]}
+ if(ids.length%2)ids.push(null);const n=ids.length,M={};let k=0;
+ for(let r=0;r<n-1;r++){for(let i=0;i<n/2;i++){const a=ids[i],b=ids[n-1-i];if(a&&b)M[k++]={a,b,r}}ids.splice(1,0,ids.pop())}
+ snap();await W({"state/phase":"play",matches:M},"Ausgelost ✓")}
+function toReg(){snap();W({"state/phase":"reg",matches:null})}
+function clearAll(){snap();W({"state/phase":"reg",matches:null,teams:null})}
+function delTeam(k){snap();W({["teams/"+k]:null})}
+function openM(i){const m=DB.matches.find(x=>x.i===i);dlg={i,a:m.sa,b:m.sb,err:""};render()}
 function pick(s,v){dlg[s]=v;dlg.err="";render()}
-function saveRes(){const{r,i,a:x,b:y}=dlg;
+function saveRes(){const{i,a:x,b:y}=dlg;
  if(x==null||y==null){dlg.err="Bitte bei beiden Teams die übrigen Becher wählen.";return render()}
  if(x===y){dlg.err="Gleichstand ist nicht möglich – bitte Verlängerung spielen und das Ergebnis eintragen.";return render()}
- snap();const m=S.bracket.rounds[r].m[i];m.sa=x;m.sb=y;dlg=null;render()}
-function delRes(){const{r,i}=dlg;snap();const m=S.bracket.rounds[r].m[i];m.sa=null;m.sb=null;dlg=null;render()}
-function table(){const T={};S.teams.forEach(t=>T[t.id]={id:t.id,sp:0,s:0,h:0,l:0});
- S.bracket.rounds.forEach(r=>r.m.forEach(m=>{if(m.sa==null)return;const A=T[m.a],B=T[m.b];A.sp++;B.sp++;A.h+=C-m.sb;A.l+=C-m.sa;B.h+=C-m.sa;B.l+=C-m.sb;if(m.sa>m.sb)A.s++;else B.s++}));
- return Object.values(T).map(x=>({...x,n:x.sp-x.s,p:x.s*2,d:x.h-x.l})).sort((a,b)=>b.p-a.p||b.d-a.d||b.h-a.h||tn(a.id).localeCompare(tn(b.id)))}
-function editT(id){const t=S.teams.find(x=>x.id===id);ed={id,name:t.name,m:t.members.length?[...t.members]:[""],err:""};render()}
-function saveT(){const name=ed.name.trim(),mem=ed.m.map(x=>x.trim()).filter(Boolean);
- if(!name){ed.err="Bitte einen Teamnamen eingeben.";return render()}
- if(S.teams.some(t=>t.id!==ed.id&&t.name.toLowerCase()===name.toLowerCase())){ed.err="Diesen Teamnamen gibt es schon.";return render()}
- if(!mem.length){ed.err="Bitte mindestens ein Teammitglied eintragen.";return render()}
- snap();const t=S.teams.find(x=>x.id===ed.id);t.name=name;t.members=mem;ed=null;render()}
-function edView(){if(!ed)return"";
- const mem=ed.m.map((v,i)=>`<div class="mr"><input value="${esc(v)}" placeholder="Mitglied ${i+1}" oninput="ed.m[${i}]=this.value;ed.err=''">${ed.m.length>1?`<button onclick="ed.m.splice(${i},1);render()" title="Entfernen">×</button>`:""}</div>`).join("");
- return`<div class="ov"><div class="dg"><h2>Team bearbeiten</h2><input value="${esc(ed.name)}" placeholder="Teamname" oninput="ed.name=this.value;ed.err=''" style="margin:8px 0">${mem}<div class="er">${esc(ed.err)}</div><div class="bar"><button onclick="ed.m.push('');render()">+ Mitglied</button><button class="p" onclick="saveT()">Speichern</button><button onclick="ed=null;render()">Abbrechen</button></div></div></div>`}
-function regView(){const n=S.teams.length;
- const mem=D.m.map((v,i)=>`<div class="mr"><input value="${esc(v)}" placeholder="Mitglied ${i+1}" oninput="D.m[${i}]=this.value">${i>=4?`<button onclick="D.m.splice(${i},1);render()" title="Entfernen">×</button>`:""}</div>`).join("");
- const list=S.teams.map(t=>`<div class="tm"><div><b>${esc(t.name)}</b>${t.members.length<4?'<span class="tag">unter 4</span>':""}<div class="mu">${t.members.length?t.members.map(esc).join(", "):"keine Mitglieder"} (${t.members.length})</div></div><div class="bar" style="flex-wrap:nowrap"><button onclick="editT(${t.id})" title="Team bearbeiten">✎</button><button onclick="delTeam(${t.id})" title="Team entfernen">×</button></div></div>`).join("")||'<div class="mu">Noch keine Teams eingetragen.</div>';
- return`<div class="g"><div class="card"><h2>Team anmelden</h2><br><input value="${esc(D.name)}" placeholder="Teamname" oninput="D.name=this.value" style="margin-bottom:8px">${mem}<div class="mu" style="margin-bottom:8px">Empfohlen: 4 Mitglieder pro Team.</div><div class="er">${esc(D.err||"")}</div><div class="bar"><button onclick="D.m.push('');render()">+ Mitglied</button><button class="p" onclick="addTeam()">Team eintragen</button></div></div>
- <div class="card"><h2>Teams (${n})</h2>${list}${n>=2?`<div class="note">Jeder gegen jeden: ${n} Teams = <b>${n*(n-1)/2} Spiele</b> (jedes Team spielt ${n-1}-mal). Sieg = 2 Punkte, bei Gleichstand zählt die Becher-Differenz.</div>`:""}
- <div class="bar" style="margin-top:8px"><button class="p" ${n<2?"disabled":""} onclick="draw()">Auslosen &amp; Turnier starten</button>${n?'<button onclick="clearAll()">Alle löschen</button>':""}</div></div></div>`}
-function tbl(tb,fin){return`<table class="tb"><tr><th>#</th><th>Team</th><th>Sp</th><th>S</th><th>N</th><th>Pkt</th><th>+</th><th>−</th><th>Δ</th></tr>${tb.map((x,i)=>`<tr class="${i==0&&fin?"top":""}"><td>${i+1}</td><td>${i==0&&fin?"🏆 ":""}${esc(tn(x.id))}</td><td>${x.sp}</td><td>${x.s}</td><td>${x.n}</td><td><b>${x.p}</b></td><td>${x.h}</td><td>${x.l}</td><td>${x.d>0?"+":""}${x.d}</td></tr>`).join("")}</table>`}
+ dlg=null;snap();W({[`matches/${i}/sa`]:x,[`matches/${i}/sb`]:y})}
+function delRes(){const{i}=dlg;dlg=null;snap();W({[`matches/${i}/sa`]:null,[`matches/${i}/sb`]:null})}
+function editT(k){const t=DB.teams[k];ed={k,name:t.name,m:t.members.length?[...t.members]:[""],err:""};render()}
+function saveT(){const name=ed.name.trim().replace(/\s+/g," "),mem=ed.m.map(x=>x.trim()).filter(Boolean),nk=kn(name),e=m=>{ed.err=m;render()};
+ if(!name)return e("Bitte einen Teamnamen eingeben.");if(name.length>40)return e("Der Teamname darf höchstens 40 Zeichen haben.");
+ if(nk!==ed.k&&DB.teams[nk])return e("Diesen Teamnamen gibt es schon.");
+ if(!mem.length)return e("Bitte mindestens ein Teammitglied eintragen.");
+ const u={},o=ed.k;if(nk!==o){u["teams/"+o]=null;DB.matches.forEach(m=>{if(m.a===o)u[`matches/${m.i}/a`]=nk;if(m.b===o)u[`matches/${m.i}/b`]=nk})}
+ u["teams/"+nk]={name,members:mem};ed=null;snap();W(u)}
+async function doLogin(){const p=document.getElementById("pw");try{await login(p?p.value:"");lo=null;render();toast("Als Orga angemeldet ✓")}catch(e){lo.err=e.message||"Anmeldung fehlgeschlagen.";render()}}
+function logout(){A=null;saveA();H=[];render()}
 function toggleFs(){fsv=!fsv;render();try{if(fsv){const e=document.documentElement;e.requestFullscreen&&e.requestFullscreen().catch(()=>{})}else if(document.fullscreenElement)document.exitFullscreen().catch(()=>{})}catch(x){}}
 document.addEventListener("fullscreenchange",()=>{if(!document.fullscreenElement&&fsv){fsv=false;render()}});
-function fsView(){const tb=table(),all=S.bracket.rounds.flatMap(r=>r.m),done=all.filter(m=>m.sa!=null).length,fin=done===all.length;
+function table(){const T={};Object.keys(DB.teams).forEach(k=>T[k]={id:k,sp:0,s:0,h:0,l:0});
+ DB.matches.forEach(m=>{if(m.sa==null||!T[m.a]||!T[m.b])return;const A=T[m.a],B=T[m.b];A.sp++;B.sp++;A.h+=C-m.sb;A.l+=C-m.sa;B.h+=C-m.sa;B.l+=C-m.sb;if(m.sa>m.sb)A.s++;else B.s++});
+ return Object.values(T).map(x=>({...x,n:x.sp-x.s,p:x.s*2,d:x.h-x.l})).sort((a,b)=>b.p-a.p||b.d-a.d||b.h-a.h||tn(a.id).localeCompare(tn(b.id)))}
+function tbl(tb,fin){return`<table class="tb"><tr><th>#</th><th>Team</th><th>Sp</th><th>S</th><th>N</th><th>Pkt</th><th>+</th><th>−</th><th>Δ</th></tr>${tb.map((x,i)=>`<tr class="${i==0&&fin?"top":""}"><td>${i+1}</td><td>${i==0&&fin?"🏆 ":""}${esc(tn(x.id))}</td><td>${x.sp}</td><td>${x.s}</td><td>${x.n}</td><td><b>${x.p}</b></td><td>${x.h}</td><td>${x.l}</td><td>${x.d>0?"+":""}${x.d}</td></tr>`).join("")}</table>`}
+const stat=()=>{const all=DB.matches,done=all.filter(m=>m.sa!=null).length;return{all,done,fin:all.length>0&&done===all.length}};
+function fsView(){const tb=table(),{all,done,fin}=stat();
  return`<div class="fsv"><div class="fh"><h2 class="os" style="margin:0;font-size:clamp(22px,4vw,40px)">Tabelle <span class="mu">(${done}/${all.length} Spiele)</span></h2><button onclick="toggleFs()">✕ Schließen</button></div>${fin?`<div class="ch">🏆 ${esc(tn(tb[0].id))} ist DHSN Leipzig Beer Pong Meister!</div>`:""}<div class="tw">${tbl(tb,fin)}</div><div class="mu" style="margin-top:8px">Sp = Spiele, S/N = Siege/Niederlagen, Pkt = Punkte, + getroffene Becher, − verlorene Becher, Δ = Becher-Differenz</div></div>`}
-function lgView(){const R=S.bracket.rounds,all=R.flatMap(r=>r.m),done=all.filter(m=>m.sa!=null).length,tb=table(),fin=done===all.length;
+function teamList(canEdit,canDel){const ks=Object.keys(DB.teams);return ks.map(k=>{const t=DB.teams[k];return`<div class="tm"><div><b>${esc(t.name)}</b>${t.members.length<4?'<span class="tag">unter 4</span>':""}<div class="mu">${t.members.map(esc).join(", ")} (${t.members.length})</div></div>${canEdit?`<div class="bar" style="flex-wrap:nowrap"><button onclick="editT('${k}')" title="Team bearbeiten">✎</button>${canDel?`<button onclick="delTeam('${k}')" title="Team entfernen">×</button>`:""}</div>`:""}</div>`}).join("")||'<div class="mu">Noch keine Teams angemeldet.</div>'}
+function regView(){const n=Object.keys(DB.teams).length,a=adm();
+ const mem=D.m.map((v,i)=>`<div class="mr"><input value="${esc(v)}" placeholder="Mitglied ${i+1}" oninput="D.m[${i}]=this.value;D.err=''">${i>=4?`<button onclick="D.m.splice(${i},1);render()" title="Entfernen">×</button>`:""}</div>`).join("");
+ return`<div class="g"><div class="card"><h2>Team anmelden</h2><br><input value="${esc(D.name)}" placeholder="Teamname" oninput="D.name=this.value;D.err=''" style="margin-bottom:8px" maxlength="40">${mem}<div class="mu" style="margin-bottom:8px">Empfohlen: 4 Mitglieder pro Team.</div><div class="er">${esc(D.err)}</div><div class="bar"><button onclick="D.m.push('');render()">+ Mitglied</button><button class="p" onclick="addTeam()">Team eintragen</button></div></div>
+ <div class="card"><h2>Teams (${n})</h2>${teamList(a,a)}${n>=2?`<div class="note">Jeder gegen jeden: ${n} Teams = <b>${n*(n-1)/2} Spiele</b> in <b>${n%2?n:n-1} Runden</b> (bis zu ${Math.floor(n/2)} Spiele gleichzeitig).${n%2?" Pro Runde setzt ein Team aus.":""} Sieg = 2 Punkte, bei Gleichstand zählt die Becher-Differenz.</div>`:""}
+ ${a?`<div class="bar" style="margin-top:8px"><button class="p" ${n<2?"disabled":""} onclick="draw()">Auslosen &amp; Turnier starten</button>${n?'<button onclick="clearAll()">Alle löschen</button>':""}</div>`:'<div class="mu" style="margin-top:8px">Das Turnier wird von der Orga gestartet und ausgelost.</div>'}</div></div>`}
+function card(m){const p=m.sa!=null,w=p?(m.sa>m.sb?"a":"b"):"",a=adm();
+ return`<div class="m ${a?(p?"dn":"pl"):""}" ${a?`onclick="openM(${m.i})"`:""}><div class="rw ${p?(w=="a"?"win":"l"):""}"><span>${esc(tn(m.a))}</span><span>${p?m.sa:""}</span></div><div class="rw ${p?(w=="b"?"win":"l"):""}"><span>${esc(tn(m.b))}</span><span>${p?m.sb:""}</span></div></div>`}
+function plan(){const R={};DB.matches.forEach(m=>(R[m.r]=R[m.r]||[]).push(m));
+ return Object.keys(R).sort((a,b)=>a-b).map(r=>{const pl=new Set(R[r].flatMap(m=>[m.a,m.b])),by=Object.keys(DB.teams).filter(k=>!pl.has(k));
+  return`<div class="rt" style="display:inline-block;padding:3px 18px;margin:8px 0 6px">Runde ${+r+1}</div><div class="mg">${R[r].map(card).join("")}</div>${by.length?`<div class="mu">Setzt aus: ${by.map(k=>esc(tn(k))).join(", ")}</div>`:""}`}).join("")}
+function lgView(){const tb=table(),{all,done,fin}=stat(),a=adm(),nr=new Set(all.map(m=>m.r)).size;
  let h=fin?`<div class="ch">🏆 ${esc(tn(tb[0].id))} ist DHSN Leipzig Beer Pong Meister!</div>`:"";
  h+=`<div class="card"><div class="bar" style="justify-content:space-between;align-items:center"><h2>Tabelle</h2><button onclick="toggleFs()">⛶ Vollbild</button></div><div class="tw">${tbl(tb,fin)}</div><div class="mu" style="margin-top:6px">Sp = Spiele, S/N = Siege/Niederlagen, Pkt = Punkte (Sieg 2). Bei Punktgleichheit zählt Δ = Becher-Differenz: + getroffene gegnerische Becher, − verlorene eigene Becher.</div></div>`;
- h+=`<div class="card"><h2>Spielplan (${done}/${all.length})</h2><div class="mg">${R.flatMap((r,ri)=>r.m.map((m,i)=>({m,ri,i}))).map(({m,ri,i},k)=>{const p=m.sa!=null,w=p?(m.sa>m.sb?"a":"b"):"";return`<div class="m ${p?"dn":"pl"}" onclick="openM(${ri},${i})"><div class="mn">Spiel ${k+1}</div><div class="rw ${p?(w=="a"?"win":"l"):""}"><span>${esc(tn(m.a))}</span><span>${p?m.sa:""}</span></div><div class="rw ${p?(w=="b"?"win":"l"):""}"><span>${esc(tn(m.b))}</span><span>${p?m.sb:""}</span></div></div>`}).join("")}</div><div class="mu" style="margin-top:8px">Tippe auf ein Spiel, um die übrigen Becher einzutragen (auch zum Korrigieren). Wer mehr Becher übrig hat, gewinnt.</div></div>`;
- h+=`<div class="card"><h2>Teams</h2>${S.teams.map(t=>`<div class="tm"><div><b>${esc(t.name)}</b><div class="mu">${t.members.map(esc).join(", ")} (${t.members.length})</div></div><button onclick="editT(${t.id})">✎ Bearbeiten</button></div>`).join("")}</div>`;
- return h}
+ h+=`<div class="card"><h2>Spielplan (${done}/${all.length}) · ${nr} Runden</h2><div class="mu">Alle Spiele einer Runde können gleichzeitig gespielt werden.${a?" Tippe auf ein Spiel, um die übrigen Becher einzutragen (auch zum Korrigieren).":""}</div>${plan()}</div>`;
+ h+=`<div class="card"><h2>Teams</h2>${teamList(a,false)}</div>`;return h}
 function chips(s){let h="";for(let v=0;v<=C;v++)h+=`<button class="cp ${dlg[s]===v?"on":""}" onclick="pick('${s}',${v})">${v}</button>`;return h}
-function dlgView(){if(!dlg)return"";const{r,i,a,b}=dlg,m=S.bracket.rounds[r].m[i],w=a!=null&&b!=null&&a!==b?(a>b?m.a:m.b):null;
- return`<div class="ov"><div class="dg"><h2>Spiel ${S.bracket.rounds.slice(0,r).reduce((s,x)=>s+x.m.length,0)+i+1}</h2><div class="mu">Wie viele Becher stehen noch? Zahl antippen.</div>
- <div class="cl">${esc(tn(m.a))}</div><div class="cg">${chips("a")}</div>
- <div class="cl">${esc(tn(m.b))}</div><div class="cg">${chips("b")}</div>
+function dlgView(){if(!dlg)return"";const{i,a,b}=dlg,m=DB.matches.find(x=>x.i===i),w=a!=null&&b!=null&&a!==b?(a>b?m.a:m.b):null;
+ return`<div class="ov"><div class="dg"><h2>Runde ${m.r+1}</h2><div class="mu">Wie viele Becher stehen noch? Zahl antippen.</div>
+ <div class="cl">${esc(tn(m.a))}</div><div class="cg">${chips("a")}</div><div class="cl">${esc(tn(m.b))}</div><div class="cg">${chips("b")}</div>
  <div class="er">${esc(dlg.err)}</div>${w?`<div class="note">Sieger: <b>${esc(tn(w))}</b></div>`:""}
- <div class="bar"><button class="p" onclick="saveRes()">Speichern</button><button onclick="dlg=null;render()">Abbrechen</button>${S.bracket.rounds[r].m[i].sa!=null?'<button onclick="delRes()">Ergebnis löschen</button>':""}</div></div></div>`}
-function render(){try{localStorage.setItem("bp2",JSON.stringify(S))}catch(e){}
- const t=!!S.bracket;
- document.getElementById("app").innerHTML=`<header><h2 class="os" style="margin:0;font-size:20px">Turnier-Zentrale</h2><div class="bar"><button onclick="undo()" ${S.hist.length?"":"disabled"}>↶ Zurück</button>${t?'<button onclick="toReg()">Zur Anmeldung</button><button onclick="draw()">Neu auslosen</button>':""}</div></header>${t?lgView():regView()}${dlgView()}${edView()}${fsv&&t?fsView():""}`;
- const e=document.getElementById("ca");if(e&&dlg)e.focus()}
-render();
+ <div class="bar"><button class="p" onclick="saveRes()">Speichern</button><button onclick="dlg=null;render()">Abbrechen</button>${m.sa!=null?'<button onclick="delRes()">Ergebnis löschen</button>':""}</div></div></div>`}
+function edView(){if(!ed)return"";
+ const mem=ed.m.map((v,i)=>`<div class="mr"><input value="${esc(v)}" placeholder="Mitglied ${i+1}" oninput="ed.m[${i}]=this.value;ed.err=''">${ed.m.length>1?`<button onclick="ed.m.splice(${i},1);render()" title="Entfernen">×</button>`:""}</div>`).join("");
+ return`<div class="ov"><div class="dg"><h2>Team bearbeiten</h2><input value="${esc(ed.name)}" placeholder="Teamname" maxlength="40" oninput="ed.name=this.value;ed.err=''" style="margin:8px 0">${mem}<div class="er">${esc(ed.err)}</div><div class="bar"><button onclick="ed.m.push('');render()">+ Mitglied</button><button class="p" onclick="saveT()">Speichern</button><button onclick="ed=null;render()">Abbrechen</button></div></div></div>`}
+function loView(){if(!lo)return"";return`<div class="ov"><div class="dg"><h2>Orga-Login</h2>${LOCAL?'<div class="mu">Demo-Modus: einfach bestätigen.</div>':'<input id="pw" type="password" placeholder="Orga-Passwort" style="margin:8px 0" onkeydown="if(event.key===\'Enter\')doLogin()">'}<div class="er">${esc(lo.err)}</div><div class="bar"><button class="p" onclick="doLogin()">Anmelden</button><button onclick="lo=null;render()">Abbrechen</button></div></div></div>`}
+function render(){pend=false;const a=adm(),play=DB.phase==="play";
+ const bar=a?`<button onclick="undo()" ${H.length?"":"disabled"}>↶ Zurück</button>${play?'<button onclick="toReg()">Zur Anmeldung</button><button onclick="draw()">Neu auslosen</button>':""}<button onclick="logout()">Abmelden</button>`:`<button onclick="lo={err:''};render()">🔒 Orga-Login</button>`;
+ document.getElementById("app").innerHTML=`<header><h2 class="os" style="margin:0;font-size:20px">${play?"Turnier läuft":"Anmeldung"}</h2><div class="bar">${bar}</div></header>${LOCAL?'<div class="note">Demo-Modus: Daten nur auf diesem Gerät (Firebase noch nicht eingerichtet).</div>':""}${off?'<div class="note">Keine Verbindung – es wird weiter versucht …</div>':""}${a?'<div class="note">Du bist als Orga angemeldet: Du kannst auslosen, Ergebnisse eintragen und Teams bearbeiten.</div>':""}${play?lgView():regView()}${dlgView()}${edView()}${loView()}${fsv&&play?fsView():""}`;
+ const e=document.getElementById("pw");if(e&&lo)e.focus()}
+sync().then(render).catch(()=>{off=true;render()});setInterval(poll,4000);
 </script></body></html>
