@@ -122,11 +122,12 @@ input{border:2px solid var(--bd);border-radius:3px}input:focus{outline:0;border-
 <div class="w" id="app"></div>
 <footer class="ft"><svg class="tear t" viewBox="0 0 1200 60" preserveAspectRatio="none" aria-hidden="true"><rect y="30" width="1200" height="60" filter="url(#rf)"/></svg><b>BIER<i>PONG</i> CUP</b><svg viewBox="0 0 200 40" width="170" height="34" aria-hidden="true"><use href="#cr" x="0" y="0" width="28" height="33"/><use href="#cb" x="36" y="0" width="28" height="33"/><use href="#bl" x="76" y="8" width="22" height="22"/><use href="#cr" x="108" y="0" width="28" height="33"/><use href="#cb" x="144" y="0" width="28" height="33"/></svg><div style="margin-top:8px">Bitte trinkt verantwortungsvoll – Spaß geht vor Promille.</div></footer>
 <div id="toast"></div>
+<script src="config.js"></script>
 <script>
-/* === EINSTELLUNGEN: hier nach der Firebase-Einrichtung eintragen (leer = Demo-Modus nur auf diesem Gerät) === */
-const FB={dbUrl:"https://tunierdatenbankteams-default-rtdb.europe-west1.firebasedatabase.app/",apiKey:"AIzaSyA7LIXQ8VPJYnhMn-Z-MzF8sHql3iUU_ik",admin:"orga@mail.com"};
+/* Firebase-Zugangsdaten stehen in der Datei config.js (fehlt sie = Demo-Modus nur auf diesem Gerät) */
+const FB=window.FB_CONFIG||{dbUrl:"",apiKey:"",admin:""};
 const LOCAL=!FB.dbUrl,C=10,LS="bp3";
-let DB={phase:"reg",teams:{},matches:[]},last="",pend=false,off=false,A=null,H=[],D={name:"",m:["","","",""],err:""},dlg=null,ed=null,lo=null,fsv=false,tt;
+let TB=0,EST={},DB={phase:"reg",tables:0,teams:{},matches:[]},last="",pend=false,off=false,A=null,H=[],D={name:"",m:["","","",""],err:""},dlg=null,ed=null,lo=null,fsv=false,tt;
 try{A=JSON.parse(localStorage.getItem("bpA"))}catch(e){}
 const saveA=()=>{try{A?localStorage.setItem("bpA",JSON.stringify(A)):localStorage.removeItem("bpA")}catch(e){}};
 const esc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -143,15 +144,15 @@ async function login(pw){if(LOCAL){A={id:"x",ref:"",exp:9e15};saveA();return}
  const r=await fetch("https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key="+FB.apiKey,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:FB.admin,password:pw,returnSecureToken:true})}),j=await r.json();
  if(!r.ok)throw new Error("Falsches Passwort.");A={id:j.idToken,ref:j.refreshToken,exp:Date.now()+j.expiresIn*1000};saveA()}
 function norm(d){const t={};Object.entries(d.teams||{}).forEach(([k,v])=>t[k]={name:v.name,members:Object.values(v.members||{})});
- const M=d.matches||{},m=Object.keys(M).filter(i=>M[i]).sort((a,b)=>a-b).map(i=>({i:+i,a:M[i].a,b:M[i].b,r:M[i].r,sa:M[i].sa==null?null:M[i].sa,sb:M[i].sb==null?null:M[i].sb}));
- return{phase:(d.state||{}).phase||"reg",teams:t,matches:m}}
+ const M=d.matches||{},m=Object.keys(M).filter(i=>M[i]).sort((a,b)=>a-b).map(i=>({i:+i,a:M[i].a,b:M[i].b,r:M[i].r,t:M[i].t,sa:M[i].sa==null?null:M[i].sa,sb:M[i].sb==null?null:M[i].sb}));
+ return{phase:(d.state||{}).phase||"reg",tables:+(d.state||{}).tables||0,teams:t,matches:m}}
 async function sync(){const d=norm(await load());last=JSON.stringify(d);DB=d}
 async function poll(){try{const d=norm(await load()),s=JSON.stringify(d);const was=off;off=false;if(s!==last){last=s;DB=d;if(busy())pend=true;else render()}else if(was)render()}catch(e){if(!off){off=true;if(!busy())render()}}}
 document.addEventListener("focusout",()=>setTimeout(()=>{if(pend&&!busy())render()},250));
 async function W(u,ok){try{await patch(u);await sync();if(ok)toast(ok);render()}catch(e){toast("Speichern fehlgeschlagen – bitte erneut als Orga anmelden.");render()}}
 function snap(){H.push(JSON.stringify(DB));if(H.length>50)H.shift()}
-async function undo(){const h=H.pop();if(!h)return;const s=JSON.parse(h),T={},M={};Object.entries(s.teams).forEach(([k,v])=>T[k]=v);s.matches.forEach(m=>M[m.i]={a:m.a,b:m.b,r:m.r,sa:m.sa,sb:m.sb});
- await W({"state/phase":s.phase,teams:Object.keys(T).length?T:null,matches:Object.keys(M).length?M:null},"Letzte Aktion rückgängig gemacht")}
+async function undo(){const h=H.pop();if(!h)return;const s=JSON.parse(h),T={},M={};Object.entries(s.teams).forEach(([k,v])=>T[k]=v);s.matches.forEach(m=>M[m.i]={a:m.a,b:m.b,r:m.r,t:m.t,sa:m.sa,sb:m.sb});
+ await W({"state/phase":s.phase,"state/tables":s.tables||null,teams:Object.keys(T).length?T:null,matches:Object.keys(M).length?M:null},"Letzte Aktion rückgängig gemacht")}
 async function addTeam(){const name=D.name.trim().replace(/\s+/g," "),mem=D.m.map(x=>x.trim()).filter(Boolean),e=m=>{D.err=m;render()};
  if(!name)return e("Bitte einen Teamnamen eingeben.");if(name.length>40)return e("Der Teamname darf höchstens 40 Zeichen haben.");
  if(!mem.length)return e("Bitte mindestens ein Teammitglied eintragen.");
@@ -159,10 +160,24 @@ async function addTeam(){const name=D.name.trim().replace(/\s+/g," "),mem=D.m.ma
  if(DB.phase!=="reg")return e("Die Anmeldung ist leider schon geschlossen.");
  const k=kn(name);if(DB.teams[k])return e("Diesen Teamnamen gibt es schon – bitte einen anderen wählen.");
  try{await patch({["teams/"+k]:{name,members:mem}});D={name:"",m:["","","",""],err:""};await sync();toast("Team angemeldet ✓");render()}catch(x){e("Das hat nicht geklappt – evtl. ist der Name vergeben oder die Anmeldung geschlossen.")}}
+function circle(ids){const a=[...ids];if(a.length%2)a.push(null);const n=a.length,R=[];for(let r=0;r<n-1;r++){const p=[];for(let i=0;i<n/2;i++){const x=a[i],y=a[n-1-i];if(x&&y)p.push([x,y])}R.push(p);a.splice(1,0,a.pop())}return R}
+function sched(ids,T){const n=ids.length,k=Math.floor(n/2),M=n*(n-1)/2;T=Math.max(1,Math.min(T||k,k));
+ let best=circle(ids).flatMap(p=>{const o=[];for(let i=0;i<p.length;i+=T)o.push(p.slice(i,i+T));return o});
+ const lb=Math.max(Math.ceil(M/T),n%2?n:n-1);
+ for(let tr=0;tr<40&&best.length>lb;tr++){const rem={};ids.forEach(x=>rem[x]=n-1);let left=[];for(let i=0;i<n;i++)for(let j=i+1;j<n;j++)left.push([ids[i],ids[j]]);const R=[];
+  while(left.length&&R.length<best.length){const used=new Set(),pick=[];
+   const cand=left.map(m=>({m,w:rem[m[0]]+rem[m[1]]+Math.random()*1.5})).sort((x,y)=>y.w-x.w);
+   for(const c of cand){if(pick.length>=T)break;const[a,b]=c.m;if(used.has(a)||used.has(b))continue;used.add(a);used.add(b);pick.push(c.m)}
+   pick.forEach(([a,b])=>{rem[a]--;rem[b]--});const ps=new Set(pick.map(String));left=left.filter(m=>!ps.has(String(m)));R.push(pick)}
+  if(!left.length&&R.length<best.length)best=R}
+ return best}
+const tbN=n=>Math.max(1,Math.min(TB||Math.floor(n/2),Math.floor(n/2)));
+const est=n=>{const T=tbN(n),k=n+"_"+T;return EST[k]||(EST[k]=sched(Array.from({length:n},(_,i)=>"t"+i),T).length)};
+function setT(d){const n=Object.keys(DB.teams).length;TB=Math.max(1,Math.min(Math.max(1,Math.floor(n/2)),tbN(n)+d));render()}
 async function draw(){const ids=Object.keys(DB.teams);for(let i=ids.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[ids[i],ids[j]]=[ids[j],ids[i]]}
- if(ids.length%2)ids.push(null);const n=ids.length,M={};let k=0;
- for(let r=0;r<n-1;r++){for(let i=0;i<n/2;i++){const a=ids[i],b=ids[n-1-i];if(a&&b)M[k++]={a,b,r}}ids.splice(1,0,ids.pop())}
- snap();await W({"state/phase":"play",matches:M},"Ausgelost ✓")}
+ const T=tbN(ids.length),R=sched(ids,T),M={};let k=0;
+ R.forEach((p,r)=>p.forEach(([a,b],t)=>{M[k++]={a,b,r,t:t+1}}));
+ snap();await W({"state/phase":"play","state/tables":T,matches:M},"Ausgelost ✓")}
 function toReg(){snap();W({"state/phase":"reg",matches:null})}
 function clearAll(){snap();W({"state/phase":"reg",matches:null,teams:null})}
 function delTeam(k){snap();W({["teams/"+k]:null})}
@@ -195,17 +210,17 @@ function teamList(canEdit,canDel){const ks=Object.keys(DB.teams);return ks.map(k
 function regView(){const n=Object.keys(DB.teams).length,a=adm();
  const mem=D.m.map((v,i)=>`<div class="mr"><input value="${esc(v)}" placeholder="Mitglied ${i+1}" oninput="D.m[${i}]=this.value;D.err=''">${i>=4?`<button onclick="D.m.splice(${i},1);render()" title="Entfernen">×</button>`:""}</div>`).join("");
  return`<div class="g"><div class="card"><h2>Team anmelden</h2><br><input value="${esc(D.name)}" placeholder="Teamname" oninput="D.name=this.value;D.err=''" style="margin-bottom:8px" maxlength="40">${mem}<div class="mu" style="margin-bottom:8px">Empfohlen: 4 Mitglieder pro Team.</div><div class="er">${esc(D.err)}</div><div class="bar"><button onclick="D.m.push('');render()">+ Mitglied</button><button class="p" onclick="addTeam()">Team eintragen</button></div></div>
- <div class="card"><h2>Teams (${n})</h2>${teamList(a,a)}${n>=2?`<div class="note">Jeder gegen jeden: ${n} Teams = <b>${n*(n-1)/2} Spiele</b> in <b>${n%2?n:n-1} Runden</b> (bis zu ${Math.floor(n/2)} Spiele gleichzeitig).${n%2?" Pro Runde setzt ein Team aus.":""} Sieg = 2 Punkte, bei Gleichstand zählt die Becher-Differenz.</div>`:""}
- ${a?`<div class="bar" style="margin-top:8px"><button class="p" ${n<2?"disabled":""} onclick="draw()">Auslosen &amp; Turnier starten</button>${n?'<button onclick="clearAll()">Alle löschen</button>':""}</div>`:'<div class="mu" style="margin-top:8px">Das Turnier wird von der Orga gestartet und ausgelost.</div>'}</div></div>`}
+ <div class="card"><h2>Teams (${n})</h2>${teamList(a,a)}${n>=2?`<div class="note">Jeder gegen jeden: ${n} Teams = <b>${n*(n-1)/2} Spiele</b>. Mit ${tbN(n)} Tischen dauert das <b>${est(n)} Runden</b> (alle Spiele einer Runde laufen gleichzeitig).${n%2?" Pro Runde setzt mindestens ein Team aus.":""} Sieg = 2 Punkte, bei Gleichstand zählt die Becher-Differenz.</div>`:""}
+ ${a?`<div class="mr" style="margin-top:10px;align-items:center"><b>Anzahl Tische:</b><button onclick="setT(-1)">−</button><b>${tbN(n)}</b><button onclick="setT(1)">+</button></div><div class="bar" style="margin-top:8px"><button class="p" ${n<2?"disabled":""} onclick="draw()">Auslosen &amp; Turnier starten</button>${n?'<button onclick="clearAll()">Alle löschen</button>':""}</div>`:'<div class="mu" style="margin-top:8px">Das Turnier wird von der Orga gestartet und ausgelost.</div>'}</div></div>`}
 function card(m){const p=m.sa!=null,w=p?(m.sa>m.sb?"a":"b"):"",a=adm();
- return`<div class="m ${a?(p?"dn":"pl"):""}" ${a?`onclick="openM(${m.i})"`:""}><div class="rw ${p?(w=="a"?"win":"l"):""}"><span>${esc(tn(m.a))}</span><span>${p?m.sa:""}</span></div><div class="rw ${p?(w=="b"?"win":"l"):""}"><span>${esc(tn(m.b))}</span><span>${p?m.sb:""}</span></div></div>`}
+ return`<div class="m ${a?(p?"dn":"pl"):""}" ${a?`onclick="openM(${m.i})"`:""}>${m.t?`<div class="mn">Tisch ${m.t}</div>`:""}<div class="rw ${p?(w=="a"?"win":"l"):""}"><span>${esc(tn(m.a))}</span><span>${p?m.sa:""}</span></div><div class="rw ${p?(w=="b"?"win":"l"):""}"><span>${esc(tn(m.b))}</span><span>${p?m.sb:""}</span></div></div>`}
 function plan(){const R={};DB.matches.forEach(m=>(R[m.r]=R[m.r]||[]).push(m));
- return Object.keys(R).sort((a,b)=>a-b).map(r=>{const pl=new Set(R[r].flatMap(m=>[m.a,m.b])),by=Object.keys(DB.teams).filter(k=>!pl.has(k));
-  return`<div class="rt" style="display:inline-block;padding:3px 18px;margin:8px 0 6px">Runde ${+r+1}</div><div class="mg">${R[r].map(card).join("")}</div>${by.length?`<div class="mu">Setzt aus: ${by.map(k=>esc(tn(k))).join(", ")}</div>`:""}`}).join("")}
+ return Object.keys(R).sort((a,b)=>a-b).map(r=>{R[r].sort((x,y)=>(x.t||0)-(y.t||0));const pl=new Set(R[r].flatMap(m=>[m.a,m.b])),by=Object.keys(DB.teams).filter(k=>!pl.has(k));
+  return`<div class="rt" style="display:inline-block;padding:3px 18px;margin:8px 0 6px">Runde ${+r+1}</div><div class="mg">${R[r].map(card).join("")}</div>${by.length?`<div class="mu">Pause: ${by.map(k=>esc(tn(k))).join(", ")}</div>`:""}`}).join("")}
 function lgView(){const tb=table(),{all,done,fin}=stat(),a=adm(),nr=new Set(all.map(m=>m.r)).size;
  let h=fin?`<div class="ch">🏆 ${esc(tn(tb[0].id))} ist DHSN Leipzig Beer Pong Meister!</div>`:"";
  h+=`<div class="card"><div class="bar" style="justify-content:space-between;align-items:center"><h2>Tabelle</h2><button onclick="toggleFs()">⛶ Vollbild</button></div><div class="tw">${tbl(tb,fin)}</div><div class="mu" style="margin-top:6px">Sp = Spiele, S/N = Siege/Niederlagen, Pkt = Punkte (Sieg 2). Bei Punktgleichheit zählt Δ = Becher-Differenz: + getroffene gegnerische Becher, − verlorene eigene Becher.</div></div>`;
- h+=`<div class="card"><h2>Spielplan (${done}/${all.length}) · ${nr} Runden</h2><div class="mu">Alle Spiele einer Runde können gleichzeitig gespielt werden.${a?" Tippe auf ein Spiel, um die übrigen Becher einzutragen (auch zum Korrigieren).":""}</div>${plan()}</div>`;
+ h+=`<div class="card"><h2>Spielplan (${done}/${all.length}) · ${nr} Runden${DB.tables?` · ${DB.tables} Tische`:""}</h2><div class="mu">Alle Spiele einer Runde können gleichzeitig gespielt werden.${a?" Tippe auf ein Spiel, um die übrigen Becher einzutragen (auch zum Korrigieren).":""}</div>${plan()}</div>`;
  h+=`<div class="card"><h2>Teams</h2>${teamList(a,false)}</div>`;return h}
 function chips(s){let h="";for(let v=0;v<=C;v++)h+=`<button class="cp ${dlg[s]===v?"on":""}" onclick="pick('${s}',${v})">${v}</button>`;return h}
 function dlgView(){if(!dlg)return"";const{i,a,b}=dlg,m=DB.matches.find(x=>x.i===i),w=a!=null&&b!=null&&a!==b?(a>b?m.a:m.b):null;
